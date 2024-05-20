@@ -2,6 +2,7 @@
 #include <chrono>
 #include <random>
 #include <vector>
+#include <iomanip>
 #include <sieve.hpp>
 
 struct S {
@@ -31,8 +32,8 @@ int main() {
     }
 
     auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed_seconds = end - start;
-    std::cout << "Sequence: " << elapsed_seconds.count() << "s\n";
+    std::chrono::duration<double, std::micro> elapsed_seconds = end - start;
+    std::cout << "Sequence: " << std::fixed << std::setprecision(3) << elapsed_seconds.count() << "us\n";
 
     // Composite.
     {
@@ -53,7 +54,7 @@ int main() {
 
     end = std::chrono::high_resolution_clock::now();
     elapsed_seconds = end - start;
-    std::cout << "Composite: " << elapsed_seconds.count() << "s\n";
+    std::cout << "Composite: " << std::fixed << std::setprecision(3) << elapsed_seconds.count() << "us\n";
 
     // CompositeNormal.
     {
@@ -75,7 +76,7 @@ int main() {
 
     end = std::chrono::high_resolution_clock::now();
     elapsed_seconds = end - start;
-    std::cout << "CompositeNormal: " << elapsed_seconds.count() << "s\n";
+    std::cout << "Composite Normal: " << std::fixed << std::setprecision(3) << elapsed_seconds.count() << "us\n";
 
     return 0;
 }
