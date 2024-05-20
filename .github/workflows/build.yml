@@ -20,4 +20,6 @@ jobs:
       - name: CMake - Build
         run: cmake --build build/ --parallel
       - name: CMake - Test
-        run: ctest --test-dir build/ -C Debug
+        run: cmake --build build/ --target unittest
+      - name: CMake - Run benchmark (dbg mode)
+        run: cmake --build build/ --target bench

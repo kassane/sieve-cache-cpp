@@ -6,10 +6,11 @@
  * License: MIT
  */
 
+#ifndef SIEVE_HPP
+#define SIEVE_HPP
 #include <unordered_map>
 #include <memory>
 #include <cassert>
-#include <string>
 #include <atomic>
 
 template <typename K, typename V>
@@ -86,6 +87,22 @@ public:
         length_ = 0;
     }
 
+    V& operator[](const K& key) {
+        auto it = cache_.find(key);
+        if (it != cache_.end()) {
+            it->second->visited = true;
+            return it->second->value;
+        }
+        if (length_.load() >= capacity_) {
+            evict();
+        }
+        auto node = std::make_shared<Node>(key, V());
+        addNode(node);
+        cache_[key] = node;
+        length_++;
+        return node->value;
+    }
+
 private:
     struct Node {
         K key;
@@ -154,31 +171,4 @@ private:
     std::atomic<size_t> length_;
     std::unordered_map<K, std::shared_ptr<Node>> cache_;
 };
-
-int main() {
-    SieveCache<std::string, std::string> cache(3);
-    assert(cache.capacity() == 3);
-    assert(cache.empty());
-    assert(cache.insert("foo", "foocontent"));
-    assert(cache.insert("bar", "barcontent"));
-    assert(cache.remove("bar"));
-    assert(cache.insert("bar2", "bar2content"));
-    assert(cache.insert("bar3", "bar3content"));
-    assert(*cache.get("foo") == "foocontent");
-    assert(cache.contains("foo"));
-    assert(cache.get("bar") == nullptr);
-    assert(*cache.get("bar2") == "bar2content");
-    assert(*cache.get("bar3") == "bar3content");
-    assert(cache.length() == 3);
-    cache.clear();
-    assert(cache.length() == 0);
-    assert(!cache.contains("foo"));
-
-    // Additional test for updating visited flag
-    cache.insert("key1", "value1");
-    cache.insert("key2", "value2");
-    cache.insert("key1", "updated");
-    cache.insert("key3", "value3");
-    assert(cache.contains("key1"));
-    return 0;
-}
+#endif // SIEVE_HPP
