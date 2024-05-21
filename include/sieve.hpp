@@ -10,19 +10,24 @@
 #define SIEVE_HPP
 
 #include <cstddef>
+#include <memory_resource>
 
 template <typename K, typename V>
 class SieveCache {
 public:
-    SieveCache(size_t capacity)
-        : capacity_(capacity), size_(0) {
-        keys_ = new K[capacity_];
-        values_ = new V[capacity_];
+    SieveCache(size_t capacity, std::pmr::memory_resource* mem_resource = std::pmr::get_default_resource())
+        : capacity_(capacity), size_(0), mem_resource_(mem_resource) {
+        keys_ = static_cast<K*>(mem_resource_->allocate(capacity_ * sizeof(K)));
+        values_ = static_cast<V*>(mem_resource_->allocate(capacity_ * sizeof(V)));
     }
 
     ~SieveCache() {
-        delete[] keys_;
-        delete[] values_;
+        for (size_t i = 0; i < size_; ++i) {
+            keys_[i].~K();
+            values_[i].~V();
+        }
+        mem_resource_->deallocate(keys_, capacity_ * sizeof(K));
+        mem_resource_->deallocate(values_, capacity_ * sizeof(V));
     }
 
     V& operator[](const K& key) {
@@ -32,13 +37,12 @@ public:
             }
         }
         if (size_ < capacity_) {
-            keys_[size_] = key;
-            values_[size_] = V();
+            new (&keys_[size_]) K(key);
+            new (&values_[size_]) V();
             ++size_;
             return values_[size_ - 1];
         }
-        // Handle the case where cache is full
-        return values_[0];
+        return values_[0]; // Simplified eviction policy
     }
 
     V* get(const K& key) {
@@ -60,8 +64,8 @@ public:
 
     bool insert(const K& key, const V& value) {
         if (size_ < capacity_) {
-            keys_[size_] = key;
-            values_[size_] = value;
+            new (&keys_[size_]) K(key);
+            new (&values_[size_]) V(value);
             ++size_;
             return true;
         }
@@ -71,10 +75,13 @@ public:
     bool remove(const K& key) {
         for (size_t i = 0; i < size_; ++i) {
             if (keys_[i] == key) {
-                // Shift elements to the left to remove the key-value pair
+                keys_[i].~K();
+                values_[i].~V();
                 for (size_t j = i; j < size_ - 1; ++j) {
-                    keys_[j] = keys_[j + 1];
-                    values_[j] = values_[j + 1];
+                    new (&keys_[j]) K(std::move(keys_[j + 1]));
+                    new (&values_[j]) V(std::move(values_[j + 1]));
+                    keys_[j + 1].~K();
+                    values_[j + 1].~V();
                 }
                 --size_;
                 return true;
@@ -93,6 +100,10 @@ public:
     }
 
     void clear() {
+        for (size_t i = 0; i < size_; ++i) {
+            keys_[i].~K();
+            values_[i].~V();
+        }
         size_ = 0;
     }
 
@@ -105,6 +116,7 @@ private:
     size_t size_;
     K* keys_;
     V* values_;
+    std::pmr::memory_resource* mem_resource_;
 };
 
 #endif // SIEVE_HPP
