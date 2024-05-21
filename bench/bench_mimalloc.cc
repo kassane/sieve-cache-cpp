@@ -8,7 +8,6 @@
 
 // Custom Allocator
 class MimallocMemoryResource : public std::pmr::memory_resource {
-protected:
     void* do_allocate(std::size_t bytes, std::size_t alignment) final {
         return mi_malloc_aligned(bytes, alignment);
     }

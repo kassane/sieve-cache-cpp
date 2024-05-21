@@ -23,3 +23,5 @@ jobs:
         run: cmake --build build/ --target unittest
       - name: CMake - Run benchmark (dbg mode)
         run: cmake --build build/ --target bench
+      - name: CMake - Run benchmark-mimalloc (dbg mode)
+        run: cmake --build build/ --target bench_mimalloc
