@@ -7,9 +7,9 @@
 
 struct S {
     S() = default;
-    explicit S(const std::vector<unsigned char>& vec, unsigned long value) : a(vec), b(value) {}
+    explicit S(const std::pmr::vector<unsigned char>& vec, unsigned long value) : a(vec), b(value) {}
 
-    std::vector<unsigned char> a;
+    std::pmr::vector<unsigned char> a;
     unsigned long b;
 };
 
@@ -43,7 +43,7 @@ int main() {
 
         for (int i = 1; i < 1000; ++i) {
             const auto n = dist(rng);
-            cache[n] = S(std::vector<unsigned char>(12), n);
+            cache[n] = S(std::pmr::vector<unsigned char>(12), n);
         }
 
         for (int i = 1; i < 1000; ++i) {
@@ -65,7 +65,7 @@ int main() {
 
         for (int i = 1; i < 1000; ++i) {
             const auto n = dist(rng);
-            cache[n] = S(std::vector<unsigned char>(12), n);
+            cache[n] = S(std::pmr::vector<unsigned char>(12), n);
         }
 
         for (int i = 1; i < 1000; ++i) {

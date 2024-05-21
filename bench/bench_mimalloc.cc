@@ -23,9 +23,9 @@ class MimallocMemoryResource : public std::pmr::memory_resource {
 
 struct S {
     S() = default;
-    explicit S(const std::vector<unsigned char>& vec, unsigned long value) : a(vec), b(value) {}
+    explicit S(const std::pmr::vector<unsigned char>& vec, unsigned long value) : a(vec), b(value) {}
 
-    std::vector<unsigned char> a;
+    std::pmr::vector<unsigned char> a;
     unsigned long b;
 };
 
@@ -57,10 +57,11 @@ int main() {
         SieveCache<unsigned long, S> cache(68, &mi);
         std::mt19937 rng(std::random_device{}());
         std::uniform_int_distribution<unsigned long> dist(0, 99);
+        std::pmr::polymorphic_allocator<unsigned char> pa{&mi};
 
         for (int i = 1; i < 1000; ++i) {
             const auto n = dist(rng);
-            cache[n] = S(std::vector<unsigned char>(12), n);
+            cache[n] = S(std::pmr::vector<unsigned char>(12, pa), n);
         }
 
         for (int i = 1; i < 1000; ++i) {
@@ -79,10 +80,11 @@ int main() {
         SieveCache<unsigned long, S> cache(static_cast<size_t>(SIGMA), &mi);
         std::mt19937 rng(std::random_device{}());
         std::uniform_int_distribution<unsigned long> dist(0, 99);
+        std::pmr::polymorphic_allocator<unsigned char> pa{&mi};
 
         for (int i = 1; i < 1000; ++i) {
             const auto n = dist(rng);
-            cache[n] = S(std::vector<unsigned char>(12), n);
+            cache[n] = S(std::pmr::vector<unsigned char>(12, pa), n);
         }
 
         for (int i = 1; i < 1000; ++i) {
