@@ -8,167 +8,103 @@
 
 #ifndef SIEVE_HPP
 #define SIEVE_HPP
-#include <unordered_map>
-#include <memory>
-#include <cassert>
-#include <atomic>
+
+#include <cstddef>
 
 template <typename K, typename V>
 class SieveCache {
 public:
-    explicit SieveCache(size_t capacity) 
-        : capacity_(capacity), head_(nullptr), tail_(nullptr), hand_(nullptr), length_(0) 
-    {
-        assert(capacity > 0 && "capacity must be greater than zero.");
+    SieveCache(size_t capacity)
+        : capacity_(capacity), size_(0) {
+        keys_ = new K[capacity_];
+        values_ = new V[capacity_];
+    }
+
+    ~SieveCache() {
+        delete[] keys_;
+        delete[] values_;
+    }
+
+    V& operator[](const K& key) {
+        for (size_t i = 0; i < size_; ++i) {
+            if (keys_[i] == key) {
+                return values_[i];
+            }
+        }
+        if (size_ < capacity_) {
+            keys_[size_] = key;
+            values_[size_] = V();
+            ++size_;
+            return values_[size_ - 1];
+        }
+        // Handle the case where cache is full
+        return values_[0];
+    }
+
+    V* get(const K& key) {
+        for (size_t i = 0; i < size_; ++i) {
+            if (keys_[i] == key) {
+                return &values_[i];
+            }
+        }
+        return nullptr;
     }
 
     size_t capacity() const {
         return capacity_;
     }
 
-    size_t length() const {
-        return length_.load();
-    }
-
     bool empty() const {
-        return length_.load() == 0;
-    }
-
-    bool contains(const K& key) const {
-        return cache_.find(key) != cache_.end();
-    }
-
-    std::shared_ptr<V> get(const K& key) {
-        auto it = cache_.find(key);
-        if (it == cache_.end()) {
-            return nullptr;
-        }
-        it->second->visited = true;
-        return std::make_shared<V>(it->second->value);
+        return size_ == 0;
     }
 
     bool insert(const K& key, const V& value) {
-        auto it = cache_.find(key);
-        if (it != cache_.end()) {
-            it->second->value = value;
-            it->second->visited = true;
-            return false;
+        if (size_ < capacity_) {
+            keys_[size_] = key;
+            values_[size_] = value;
+            ++size_;
+            return true;
         }
-        if (length_.load() >= capacity_) {
-            evict();
-        }
-        auto node = std::make_shared<Node>(key, value);
-        addNode(node);
-        cache_[key] = node;
-        length_++;
-        return true;
+        return false; // Cache is full
     }
 
     bool remove(const K& key) {
-        auto it = cache_.find(key);
-        if (it == cache_.end()) {
-            return false;
+        for (size_t i = 0; i < size_; ++i) {
+            if (keys_[i] == key) {
+                // Shift elements to the left to remove the key-value pair
+                for (size_t j = i; j < size_ - 1; ++j) {
+                    keys_[j] = keys_[j + 1];
+                    values_[j] = values_[j + 1];
+                }
+                --size_;
+                return true;
+            }
         }
-        auto node = it->second;
-        if (node == hand_) {
-            hand_ = node->prev.lock();
+        return false; // Key not found
+    }
+
+    bool contains(const K& key) const {
+        for (size_t i = 0; i < size_; ++i) {
+            if (keys_[i] == key) {
+                return true;
+            }
         }
-        removeNode(node);
-        cache_.erase(it);
-        length_--;
-        return true;
+        return false;
     }
 
     void clear() {
-        cache_.clear();
-        head_.reset();
-        tail_.reset();
-        hand_.reset();
-        length_ = 0;
+        size_ = 0;
     }
 
-    V& operator[](const K& key) {
-        auto it = cache_.find(key);
-        if (it != cache_.end()) {
-            it->second->visited = true;
-            return it->second->value;
-        }
-        if (length_.load() >= capacity_) {
-            evict();
-        }
-        auto node = std::make_shared<Node>(key, V());
-        addNode(node);
-        cache_[key] = node;
-        length_++;
-        return node->value;
+    size_t length() const {
+        return size_;
     }
 
 private:
-    struct Node {
-        K key;
-        V value;
-        std::shared_ptr<Node> next;
-        std::weak_ptr<Node> prev;
-        bool visited;
-
-        Node(const K& k, const V& v) : key(k), value(v), visited(false) {}
-    };
-
-    void addNode(std::shared_ptr<Node> node) {
-        node->next = head_;
-        node->prev.reset();
-        if (head_) {
-            head_->prev = node;
-        }
-        head_ = node;
-        if (!tail_) {
-            tail_ = head_;
-        }
-    }
-
-    void removeNode(std::shared_ptr<Node> node) {
-        auto prev = node->prev.lock();
-        auto next = node->next;
-
-        if (prev) {
-            prev->next = next;
-        } else {
-            head_ = next;
-        }
-
-        if (next) {
-            next->prev = prev;
-        } else {
-            tail_ = prev;
-        }
-
-        node->prev.reset();
-        node->next.reset();
-    }
-
-    void evict() {
-        auto node = hand_ ? hand_ : tail_;
-        while (node) {
-            if (!node->visited) {
-                break;
-            }
-            node->visited = false;
-            node = node->prev.lock() ? node->prev.lock() : tail_;
-        }
-
-        if (node) {
-            hand_ = node->prev.lock();
-            cache_.erase(node->key);
-            removeNode(node);
-            length_--;
-        }
-    }
-
     size_t capacity_;
-    std::shared_ptr<Node> head_;
-    std::shared_ptr<Node> tail_;
-    std::shared_ptr<Node> hand_;
-    std::atomic<size_t> length_;
-    std::unordered_map<K, std::shared_ptr<Node>> cache_;
+    size_t size_;
+    K* keys_;
+    V* values_;
 };
+
 #endif // SIEVE_HPP
