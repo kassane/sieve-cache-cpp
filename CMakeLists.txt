@@ -23,8 +23,6 @@ option(BUILD_TESTS "Build tests" ON)
 include(cmake/doctest.cmake)
 include(cmake/mimalloc.cmake)
 
-include_directories("include")
-
 if(BUILD_TESTS)
     add_executable(${PROJECT_NAME}_test "tests/test.cc")
     target_include_directories(${PROJECT_NAME}_test INTERFACE "include")
@@ -71,3 +69,4 @@ if(BUILD_BENCH)
     endforeach()
 endif()
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
+install(DIRECTORY include DESTINATION include)
