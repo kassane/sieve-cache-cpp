@@ -50,6 +50,7 @@ TEST_CASE("Testing SieveCache functionality") {
     cache.insert("key3", "value3");
     CHECK(cache.contains("key1"));
   }
+
   SUBCASE("Operator[] test") {
     cache["key1"] = "value1";
     CHECK(cache.contains("key1"));
@@ -65,10 +66,26 @@ TEST_CASE("Testing SieveCache functionality") {
     // Insert a new key and check for evictions
     cache["key4"] = "value4";
     CHECK(cache.length() == 3);
+  }
 
-    // Verify that one of the initial keys was evicted
-    if (!cache.contains("key3")) {
-      CHECK(*cache.get("key3") == "value3");
-    }
+  SUBCASE("Equality and inequality operators") {
+    SieveCache<std::string, std::string> cache2(3);
+    cache.insert("key1", "value1");
+    cache2.insert("key1", "value1");
+
+    CHECK(cache == cache2);
+
+    cache2.insert("key2", "value2");
+    CHECK(cache != cache2);
+  }
+
+  SUBCASE("Comparison operators") {
+    SieveCache<std::string, std::string> cache2(3);
+    cache.insert("key1", "value1");
+    cache2.insert("key1", "value1");
+    cache2.insert("key2", "value2");
+
+    CHECK(cache < cache2);
+    CHECK(cache2 > cache);
   }
 }

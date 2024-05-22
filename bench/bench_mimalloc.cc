@@ -32,6 +32,7 @@ struct S {
 int main() {
     auto start = std::chrono::high_resolution_clock::now();
     MimallocMemoryResource mi;
+    std::pmr::set_default_resource(&mi);
 
     // Sequence.
     {
@@ -57,11 +58,10 @@ int main() {
         SieveCache<unsigned long, S> cache(68, &mi);
         std::mt19937 rng(std::random_device{}());
         std::uniform_int_distribution<unsigned long> dist(0, 99);
-        std::pmr::polymorphic_allocator<unsigned char> pa{&mi};
 
         for (int i = 1; i < 1000; ++i) {
             const auto n = dist(rng);
-            cache[n] = S(std::pmr::vector<unsigned char>(12, pa), n);
+            cache[n] = S(std::pmr::vector<unsigned char>{12}, n);
         }
 
         for (int i = 1; i < 1000; ++i) {
@@ -80,11 +80,10 @@ int main() {
         SieveCache<unsigned long, S> cache(static_cast<size_t>(SIGMA), &mi);
         std::mt19937 rng(std::random_device{}());
         std::uniform_int_distribution<unsigned long> dist(0, 99);
-        std::pmr::polymorphic_allocator<unsigned char> pa{&mi};
 
         for (int i = 1; i < 1000; ++i) {
             const auto n = dist(rng);
-            cache[n] = S(std::pmr::vector<unsigned char>(12, pa), n);
+            cache[n] = S(std::pmr::vector<unsigned char>{12}, n);
         }
 
         for (int i = 1; i < 1000; ++i) {

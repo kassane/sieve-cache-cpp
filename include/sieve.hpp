@@ -11,11 +11,20 @@
 
 #include <cstddef>
 #include <memory_resource>
+#if __cplusplus >= 202002L
+#include <compare>
+#endif
 
 template <typename K, typename V>
 class SieveCache {
 public:
-    SieveCache(size_t capacity, std::pmr::memory_resource* mem_resource = std::pmr::get_default_resource())
+    SieveCache(size_t capacity)
+        : capacity_(capacity), size_(0), mem_resource_(std::pmr::get_default_resource()) {
+        keys_ = static_cast<K*>(mem_resource_->allocate(capacity_ * sizeof(K)));
+        values_ = static_cast<V*>(mem_resource_->allocate(capacity_ * sizeof(V)));
+    }
+
+    SieveCache(size_t capacity, std::pmr::memory_resource* mem_resource)
         : capacity_(capacity), size_(0), mem_resource_(mem_resource) {
         keys_ = static_cast<K*>(mem_resource_->allocate(capacity_ * sizeof(K)));
         values_ = static_cast<V*>(mem_resource_->allocate(capacity_ * sizeof(V)));
@@ -29,6 +38,34 @@ public:
         mem_resource_->deallocate(keys_, capacity_ * sizeof(K));
         mem_resource_->deallocate(values_, capacity_ * sizeof(V));
     }
+
+#if __cplusplus >= 202002L && __has_include(<compare>)
+    bool operator<=>(const SieveCache<K, V>& other) const = default;
+#else
+    bool operator<(const SieveCache& other) const {
+        return size_ < other.size_;
+    }
+
+    bool operator>(const SieveCache& other) const {
+        return size_ > other.size_;
+    }
+
+    bool operator==(const SieveCache& other) const {
+        if (size_ != other.size_ || capacity_ != other.capacity_) {
+            return false;
+        }
+        for (size_t i = 0; i < size_; ++i) {
+            if (!(keys_[i] == other.keys_[i] && values_[i] == other.values_[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator!=(const SieveCache& other) const {
+        return !(*this == other);
+    }
+#endif
 
     V& operator[](const K& key) {
         for (size_t i = 0; i < size_; ++i) {
