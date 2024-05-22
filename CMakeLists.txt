@@ -25,7 +25,7 @@ include(cmake/mimalloc.cmake)
 
 if(BUILD_TESTS)
     add_executable(${PROJECT_NAME}_test "tests/test.cc")
-    target_include_directories(${PROJECT_NAME}_test INTERFACE "include")
+    target_include_directories(${PROJECT_NAME}_test PUBLIC "include")
     target_link_libraries(${PROJECT_NAME}_test PRIVATE doctest::doctest)
 
     if(MSVC)
