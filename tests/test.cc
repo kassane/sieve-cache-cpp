@@ -94,17 +94,17 @@ TEST_CASE("Testing SieveCache functionality") {
 
   SUBCASE("Thread Safety") {
     constexpr size_t capacity = 100;
-    SieveCache<int, std::string> cache(capacity);
+    SieveCache<int, std::string> cache3(capacity);
 
-    auto insert_task = [&cache]() {
+    auto insert_task = [&cache3]() {
       for (int i = 0; i < 50; ++i) {
-        cache.insert(i, "value" + std::to_string(i));
+        cache3.insert(i, "value" + std::to_string(i));
       }
     };
 
-    auto get_task = [&cache]() {
+    auto get_task = [&cache3]() {
       for (int i = 0; i < 50; ++i) {
-        auto value = cache.get(i);
+        auto value = cache3.get(i);
         if (value) {
           CHECK(*value == "value" + std::to_string(i));
         }
