@@ -1,6 +1,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
+DOCTEST_MAKE_STD_HEADERS_CLEAN_FROM_WARNINGS_ON_WALL_BEGIN
 #include <sieve.hpp>
+#include <thread>
+DOCTEST_MAKE_STD_HEADERS_CLEAN_FROM_WARNINGS_ON_WALL_END
 
 TEST_CASE("Testing SieveCache functionality") {
   SieveCache<std::string, std::string> cache(3);
@@ -87,5 +90,35 @@ TEST_CASE("Testing SieveCache functionality") {
 
     CHECK(cache < cache2);
     CHECK(cache2 > cache);
+  }
+
+  SUBCASE("Thread Safety") {
+    constexpr size_t capacity = 100;
+    SieveCache<int, std::string> cache(capacity);
+
+    auto insert_task = [&cache]() {
+      for (int i = 0; i < 50; ++i) {
+        cache.insert(i, "value" + std::to_string(i));
+      }
+    };
+
+    auto get_task = [&cache]() {
+      for (int i = 0; i < 50; ++i) {
+        auto value = cache.get(i);
+        if (value) {
+          CHECK(*value == "value" + std::to_string(i));
+        }
+      }
+    };
+
+    std::thread t1(insert_task);
+    std::thread t2(insert_task);
+    std::thread t3(get_task);
+    std::thread t4(get_task);
+
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
   }
 }
