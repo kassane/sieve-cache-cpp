@@ -40,7 +40,20 @@ public:
     }
 
 #if __cplusplus >= 202002L && __has_include(<compare>)
-    bool operator<=>(const SieveCache<K, V>& other) const = default;
+    auto operator<=>(const SieveCache<K, V>& other) const {
+        if (size_ <=> other.size_ != 0) {
+            return size_ <=> other.size_;
+        }
+        for (size_t i = 0; i < size_; ++i) {
+            if (auto cmp = keys_[i] <=> other.keys_[i]; cmp != 0) {
+                return cmp;
+            }
+            if (auto cmp = values_[i] <=> other.values_[i]; cmp != 0) {
+                return cmp;
+            }
+        }
+        return std::strong_ordering::equal;
+    }
 #else
     bool operator<(const SieveCache& other) const {
         return size_ < other.size_;
@@ -49,7 +62,7 @@ public:
     bool operator>(const SieveCache& other) const {
         return size_ > other.size_;
     }
-
+#endif
     bool operator==(const SieveCache& other) const {
         if (size_ != other.size_ || capacity_ != other.capacity_) {
             return false;
@@ -65,7 +78,6 @@ public:
     bool operator!=(const SieveCache& other) const {
         return !(*this == other);
     }
-#endif
 
     V& operator[](const K& key) {
         for (size_t i = 0; i < size_; ++i) {
