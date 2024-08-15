@@ -1,6 +1,6 @@
 /**
- * This is an implementation of the [SIEVE](https://cachemon.github.io/SIEVE-website)
- * cache eviction algorithm.
+ * This is an implementation of the
+ * [SIEVE](https://cachemon.github.io/SIEVE-website) cache eviction algorithm.
  * Authors: Matheus Catarino França
  * Copyright: Copyright © 2024 Matheus C. França
  * License: MIT
@@ -8,237 +8,161 @@
 
 #ifndef SIEVE_HPP
 #define SIEVE_HPP
-
-#include <cstddef>
+#include <atomic>
+#include <cassert>
+#include <memory>
 #include <memory_resource>
-#include <mutex>
-#include <shared_mutex>
-#if __cplusplus >= 202002L
-#include <compare>
-#endif
+#include <unordered_map>
 
-template <typename K, typename V>
-class SieveCache {
+template <typename K, typename V> class SieveCache {
 public:
-    SieveCache(size_t capacity)
-        : capacity_(capacity), size_(0), mem_resource_(std::pmr::get_default_resource()) {
-        keys_ = static_cast<K*>(mem_resource_->allocate(capacity_ * sizeof(K)));
-        values_ = static_cast<V*>(mem_resource_->allocate(capacity_ * sizeof(V)));
-    }
+  explicit SieveCache(size_t capacity, std::pmr::memory_resource *resource =
+                                           std::pmr::get_default_resource())
+      : capacity_(capacity), head_(nullptr), tail_(nullptr), hand_(nullptr),
+        length_(0) {
+    assert(capacity > 0 && "capacity must be greater than zero.");
+    std::pmr::set_default_resource(resource);
+  }
 
-    explicit SieveCache(size_t capacity, std::pmr::memory_resource* mem_resource)
-        : capacity_(capacity), size_(0), mem_resource_(mem_resource) {
-        keys_ = static_cast<K*>(mem_resource_->allocate(capacity_ * sizeof(K)));
-        values_ = static_cast<V*>(mem_resource_->allocate(capacity_ * sizeof(V)));
-    }
+  size_t capacity() const { return capacity_; }
 
-    ~SieveCache() {
-        for (size_t i = 0; i < size_; ++i) {
-            keys_[i].~K();
-            values_[i].~V();
-        }
-        mem_resource_->deallocate(keys_, capacity_ * sizeof(K));
-        mem_resource_->deallocate(values_, capacity_ * sizeof(V));
-    }
+  size_t length() const { return length_.load(); }
 
-#if __cplusplus >= 202002L && __has_include(<compare>)
-    auto operator<=>(const SieveCache<K, V>& other) const {
-        if (size_ <=> other.size_ != 0) {
-            return size_ <=> other.size_;
-        }
-        for (size_t i = 0; i < size_; ++i) {
-            if (auto cmp = keys_[i] <=> other.keys_[i]; cmp != 0) {
-                return cmp;
-            }
-            if (auto cmp = values_[i] <=> other.values_[i]; cmp != 0) {
-                return cmp;
-            }
-        }
-        return std::strong_ordering::equal;
-    }
-#else
-    bool operator<(const SieveCache& other) const {
-        return size_ < other.size_;
-    }
+  bool empty() const { return length_.load() == 0; }
 
-    bool operator>(const SieveCache& other) const {
-        return size_ > other.size_;
-    }
-#endif
-    bool operator==(const SieveCache& other) const {
-        if (size_ != other.size_ || capacity_ != other.capacity_) {
-            return false;
-        }
-        for (size_t i = 0; i < size_; ++i) {
-            if (!(keys_[i] == other.keys_[i] && values_[i] == other.values_[i])) {
-                return false;
-            }
-        }
-        return true;
-    }
+  bool contains(const K &key) const { return cache_.find(key) != cache_.end(); }
 
-    bool operator!=(const SieveCache& other) const {
-        return !(*this == other);
+  std::shared_ptr<V> get(const K &key) {
+    auto it = cache_.find(key);
+    if (it == cache_.end()) {
+      return nullptr;
     }
+    it->second->visited = true;
+    return std::make_shared<V>(it->second->value);
+  }
 
-    inline V& operator[](const K& key) noexcept {
-        std::shared_lock<std::shared_mutex> lock(rw_mutex_);
-        for (size_t i = 0; i < size_; ++i) {
-            if (keys_[i] == key) {
-                return values_[i];
-            }
-        }
-        if (size_ < capacity_) {
-            construct(&keys_[size_], key);
-            construct(&values_[size_]);
-            ++size_;
-            return values_[size_ - 1];
-        }
-        // Handle the case where cache is full
-        return values_[0];
+  bool insert(const K &key, const V &value) {
+    auto it = cache_.find(key);
+    if (it != cache_.end()) {
+      it->second->value = value;
+      it->second->visited = true;
+      return false;
     }
+    if (length_.load() >= capacity_) {
+      evict();
+    }
+    auto node = std::make_shared<Node>(key, value);
+    addNode(node);
+    cache_[key] = node;
+    length_++;
+    return true;
+  }
 
-    inline V* get(const K& key) noexcept {
-        for (size_t i = 0; i < size_; ++i) {
-            if (keys_[i] == key) {
-                return &values_[i];
-            }
-        }
-        return nullptr;
+  bool remove(const K &key) {
+    auto it = cache_.find(key);
+    if (it == cache_.end()) {
+      return false;
     }
+    auto node = it->second;
+    if (node == hand_) {
+      hand_ = node->prev.lock();
+    }
+    removeNode(node);
+    cache_.erase(it);
+    length_--;
+    return true;
+  }
 
-    inline V* get_locked(const K& key) noexcept {
-        std::shared_lock<std::shared_mutex> lock(rw_mutex_);
-        for (size_t i = 0; i < size_; ++i) {
-            if (keys_[i] == key) {
-                return &values_[i];
-            }
-        }
-        return nullptr;
-    }
+  void clear() {
+    cache_.clear();
+    head_.reset();
+    tail_.reset();
+    hand_.reset();
+    length_ = 0;
+  }
 
-    constexpr size_t capacity() const {
-        return capacity_;
+  V &operator[](const K &key) {
+    auto it = cache_.find(key);
+    if (it != cache_.end()) {
+      it->second->visited = true;
+      return it->second->value;
     }
-
-    constexpr bool empty() const {
-        return size_ == 0;
+    if (length_.load() >= capacity_) {
+      evict();
     }
-
-    inline bool insert(const K& key, const V& value) noexcept {
-        if (size_ < capacity_) {
-            construct(&keys_[size_], key);
-            construct(&values_[size_], value);
-            ++size_;
-            return true;
-        }
-        return false; // Cache is full
-    }
-
-    inline bool insert_locked(const K& key, const V& value) noexcept {
-        std::unique_lock<std::shared_mutex> lock(rw_mutex_);
-        if (size_ < capacity_) {
-            construct(&keys_[size_], key);
-            construct(&values_[size_], value);
-            ++size_;
-            return true;
-        }
-        return false; // Cache is full
-    }
-
-    inline bool remove(const K& key) noexcept {
-        for (size_t i = 0; i < size_; ++i) {
-            if (keys_[i] == key) {
-                destroy(&keys_[i]);
-                destroy(&values_[i]);
-                for (size_t j = i; j < size_ - 1; ++j) {
-                    construct(&keys_[j], std::move(keys_[j + 1]));
-                    construct(&values_[j], std::move(values_[j + 1]));
-                    destroy(&keys_[j + 1]);
-                    destroy(&values_[j + 1]);
-                }
-                --size_;
-                return true;
-            }
-        }
-        return false; // Key not found
-    }
-
-    inline bool remove_locked(const K& key) noexcept {
-        std::unique_lock<std::shared_mutex> lock(rw_mutex_);
-        for (size_t i = 0; i < size_; ++i) {
-            if (keys_[i] == key) {
-                destroy(&keys_[i]);
-                destroy(&values_[i]);
-                for (size_t j = i; j < size_ - 1; ++j) {
-                    construct(&keys_[j], std::move(keys_[j + 1]));
-                    construct(&values_[j], std::move(values_[j + 1]));
-                    destroy(&keys_[j + 1]);
-                    destroy(&values_[j + 1]);
-                }
-                --size_;
-                return true;
-            }
-        }
-        return false; // Key not found
-    }
-
-    inline bool contains(const K& key) const noexcept {
-        for (size_t i = 0; i < size_; ++i) {
-            if (keys_[i] == key) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    inline bool contains_locked(const K& key) const noexcept {
-        std::lock_guard<std::shared_mutex> lock(rw_mutex_);
-        for (size_t i = 0; i < size_; ++i) {
-            if (keys_[i] == key) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    inline void clear() noexcept {
-        for (size_t i = 0; i < size_; ++i) {
-            keys_[i].~K();
-            values_[i].~V();
-        }
-        size_ = 0;
-    }
-
-    inline void clear_locked() noexcept {
-        std::unique_lock<std::shared_mutex> lock(rw_mutex_);
-        for (size_t i = 0; i < size_; ++i) {
-            keys_[i].~K();
-            values_[i].~V();
-        }
-        size_ = 0;
-    }
-
-    constexpr size_t length() const noexcept {
-        return size_;
-    }
+    auto node = std::make_shared<Node>(key, V());
+    addNode(node);
+    cache_[key] = node;
+    length_++;
+    return node->value;
+  }
 
 private:
-    template<typename T, typename... Args>
-    void construct(T* ptr, Args&&... args) noexcept {
-        new (ptr) T(std::forward<Args>(args)...);
+  struct Node {
+    K key;
+    V value;
+    std::shared_ptr<Node> next;
+    std::weak_ptr<Node> prev;
+    bool visited;
+
+    Node(const K &k, const V &v) : key(k), value(v), visited(false) {}
+  };
+
+  void addNode(std::shared_ptr<Node> node) {
+    node->next = head_;
+    node->prev.reset();
+    if (head_) {
+      head_->prev = node;
+    }
+    head_ = node;
+    if (!tail_) {
+      tail_ = head_;
+    }
+  }
+
+  void removeNode(std::shared_ptr<Node> node) {
+    auto prev = node->prev.lock();
+    auto next = node->next;
+
+    if (prev) {
+      prev->next = next;
+    } else {
+      head_ = next;
     }
 
-    template<typename T>
-    void destroy(T* ptr) noexcept {
-        ptr->~T();
+    if (next) {
+      next->prev = prev;
+    } else {
+      tail_ = prev;
     }
-    size_t capacity_;
-    size_t size_;
-    K* keys_;
-    V* values_;
-    std::pmr::memory_resource* mem_resource_;
-    mutable std::shared_mutex rw_mutex_;
+
+    node->prev.reset();
+    node->next.reset();
+  }
+
+  void evict() {
+    auto node = hand_ ? hand_ : tail_;
+    while (node) {
+      if (!node->visited) {
+        break;
+      }
+      node->visited = false;
+      node = node->prev.lock() ? node->prev.lock() : tail_;
+    }
+
+    if (node) {
+      hand_ = node->prev.lock();
+      cache_.erase(node->key);
+      removeNode(node);
+      length_--;
+    }
+  }
+
+  size_t capacity_;
+  std::shared_ptr<Node> head_;
+  std::shared_ptr<Node> tail_;
+  std::shared_ptr<Node> hand_;
+  std::atomic<size_t> length_;
+  std::pmr::unordered_map<K, std::shared_ptr<Node>> cache_;
 };
-
 #endif // SIEVE_HPP
